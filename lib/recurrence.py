@@ -198,25 +198,30 @@ def attentive_decoder(enc_states, init_state, batch_size,
 
 
 '''
-def gated_attention_net(enc_states, init_state, batch_size, 
-                      d, timesteps,
-                      inputs = [],
-                      scope='gated_attention_net_0',
-                      feed_previous=False):
+def gated_attention_net(states_a, states_b, init_state_c, 
+                        batch_size, d, La, Lb, 
+                        scope='gated_attention_net_0'):
     
-    # define attention parameters
-    Wa = tf.get_variable('Wa', shape=[d*2, d], dtype=tf.float32)
-    Ua = tf.get_variable('Ua', shape=[d, d], dtype=tf.float32)
-    Va = tf.get_variable('Va', shape=[d, 1], dtype=tf.float32)
-    att_params = {
-        'Wa' : Wa, 'Ua' : Ua, 'Va' : Va
-    }
-    
+    with tf.variable_scope(scope, reuse=False):
+        # define attention parameters
+        Wa = tf.get_variable('Wa', shape=[d, d], dtype=tf.float32)
+        Wb = tf.get_variable('Wb', shape=[d, d], dtype=tf.float32)
+        Wc = tf.get_variable('Wc', shape=[d, d], dtype=tf.float32)
+        Va = tf.get_variable('Va', shape=[d, 1], dtype=tf.float32)
+
+        att_params = {
+            'Wa' : Wa, 'Wb' : Wb, 'Wc' : Wc, 'Va' : Va
+        }
+
+        # input gate/projection
+        Wg = tf.get_variable('Wg', shape=[d, d], dtype=tf.float32)
+        Wi = tf.get_variable('Wi', shape=[d*2, d], dtype=tf.float32)
+
     # define rnn cell
-    cell = gru(num_units=d*2)
+    cell = gru(num_units=d)
     
-    # gate params
-    Wg = tf.get_variable('Wg', shape=[d*2, d*2], dtype=tf.float32)
+    # convert states_a to batch_major
+    states_a = tf.transpose(states_a, [1,0,2])
         
     def step(input_, state):
         # define input gate
@@ -227,28 +232,25 @@ def gated_attention_net(enc_states, init_state, batch_size,
         output, state = cell(input_, state)
         return output, state
     
-    outputs = [inputs[0]] # include GO token as init input
-    states = [init_state]
-    for i in range(timesteps):
+    states = [init_state_c]
+    for i in range(Lb):
         if i>0:
             tf.get_variable_scope().reuse_variables()
 
-        input_ = outputs[-1] if feed_previous else inputs[i]
-
         # get match for current word
-        ci = attention(enc_states, states[-1], att_params, d, timesteps)
+        ci = attention_pooling(states_a, states_b[i], states[-1], 
+                                att_params, d, La)
         # combine ci and input(i) 
-        input_ = tf.concat([input_, ci], axis=-1)
-        output, state = step(input_, states[-1])
+        input_ = tf.matmul(tf.concat([states_b[i], ci], axis=-1), Wi)
+        _, state = step(input_, states[-1])
     
-        outputs.append(output)
         states.append(state)
 
     # time major -> batch major
     states_bm = tf.transpose(tf.stack(states[1:]), [1, 0, 2])
-    outputs_bm = tf.transpose(tf.stack(outputs[1:]), [1, 0, 2])
+    #outputs_bm = tf.transpose(tf.stack(outputs[1:]), [1, 0, 2])
 
-    return outputs_bm, states_bm
+    return states_bm
 
 '''
     Attention Pooling Mechanism
@@ -257,16 +259,16 @@ def gated_attention_net(enc_states, init_state, batch_size,
         https://www.microsoft.com/en-us/research/publication/mrc/
 
     [usage]
-    ci = attention(enc_states, dec_state, params= {
+    ci = attention(qstates, pstates_i, state, params= {
         'Wa' : Wa, # [d,d]
         'Wb' : Wb, # [d,d]
         'Wc' : Wc, # [d,d]
         'Va' : Va  # [d,1]
         })
-    shape(states_a) : [B, L, d]
-    shape(states_b_i) : [B, d]
-    shape(state_c)    : [B, d]
-    shape(ci)         : [B, d]
+    shape(qstates) : [B, L, d]
+    shape(pstates_i) : [B, d]
+    shape(state)     : [B, d]
+    shape(ci)        : [B, d]
 
 '''
 def attention_pooling(states_a, states_b_i, state_c, params, d, timesteps):
@@ -274,9 +276,9 @@ def attention_pooling(states_a, states_b_i, state_c, params, d, timesteps):
     # s_ij -> [B,L,d]
     a = tf.tanh(tf.expand_dims(tf.matmul(states_b_i, Wb), axis=1) +
             tf.reshape(tf.matmul(tf.reshape(states_a,[-1, d]), Wa), [-1, timesteps, d]) +
-            tf.expand_dims(tf.matmul(state_c, Wc)))
+            tf.expand_dims(tf.matmul(state_c, Wc), axis=1))
     Va = params['Va'] # [d, 1]
     # e_ij -> softmax(aV_a) : [B, L]
     scores = tf.nn.softmax(tf.reshape(tf.matmul(tf.reshape(a, [-1, d]), Va), [-1, timesteps]))
     # c_i -> weighted sum of encoder states
-    return tf.reduce_sum(enc_states*tf.expand_dims(scores, axis=-1), axis=1) # [B, d]    
+    return tf.reduce_sum(states_a*tf.expand_dims(scores, axis=-1), axis=1) # [B, d]
