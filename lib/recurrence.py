@@ -8,7 +8,8 @@ def gru(num_units):
 
 #Create a stacked gated recurrent units, with n-layer
 def gru_n(num_units, num_layers):
-    stacked_gru_cells = rnn.MultiRNNCell([gru(num_units)*num_layers],state_is_tuple=True)
+    stacked_gru_cells = rnn.MultiRNNCell(
+                            [gru(num_units) for _ in range(num_layers)])
     return stacked_gru_cells
 
 
@@ -77,6 +78,8 @@ def bi_net(cell_f, cell_b, inputs, batch_size, timesteps,
                           timesteps,
                           scope=scope + '_b')
     
+    cell_f.state_size[0]
+
     outputs = None
     # outputs
     if project_outputs:
