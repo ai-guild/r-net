@@ -56,14 +56,12 @@ def uni_net(cell, inputs, init_state, timesteps, time_major=False, scope='uni_ne
                                         inputs= inputs_emb,
                                         batch_size= batch_size,
                                         timesteps=L,
-                                        scope='bi_net_5',
-                                        num_layers=3,
+                                        scope='bi_net_0',
                                         project_outputs=True)
 '''
 def bi_net(cell_f, cell_b, inputs, batch_size, timesteps, 
-           scope= 'bi_net',
-           project_outputs=False,
-           num_layers=1, hidden_dim = 1):
+           scope= 'bi_net_0',
+           project_outputs=False)
 
     # forward
     _, states_f = uni_net(cell_f, 
@@ -77,8 +75,10 @@ def bi_net(cell_f, cell_b, inputs, batch_size, timesteps,
                           cell_b.zero_state(batch_size, tf.float32),
                           timesteps,
                           scope=scope + '_b')
-    
-    cell_f.state_size[0]
+   
+    # infer num_layers and hidden_dim from cell
+    num_layers = len(cell_f.state_size)
+    hidden_dim = cell_f.state_size[0]
 
     outputs = None
     # outputs
