@@ -1,16 +1,15 @@
 import tensorflow as tf
+from tensorflow.contrib import rnn
 
-
+#Gated recurrent units
 def gru(num_units):
-    return tf.contrib.rnn.GRUCell(num_units)
+    gru_cell = rnn.GRUCell(num_units)
+    return gru_cell
 
+#Create a stacked gated recurrent units, with n-layer
 def gru_n(num_units, num_layers):
-    
-    # https://github.com/tensorflow/tensorflow/issues/8191
-    return tf.contrib.rnn.MultiRNNCell(
-                    [gru(num_units) for _ in range(num_layers)],
-                    #state_is_tuple=True
-                    )
+    stacked_gru_cells = rnn.MultiRNNCell([gru(num_units)*num_layers],state_is_tuple=True)
+    return stacked_gru_cells
 
 
 def get_variables(n, shape, name='W'):
@@ -31,7 +30,7 @@ def get_variables(n, shape, name='W'):
 def uni_net(cell, inputs, init_state, timesteps, time_major=False, scope='uni_net_0'):
     # convert to time major format
     if not time_major:
-        inputs_tm = tf.transpose(inputs, [1, 0, -1])
+        inputs_tm = tf.transpose(inputs, [1, 0, -1],name="input_time_major")
     # collection of states and outputs
     states, outputs = [init_state], []
 
@@ -63,7 +62,7 @@ def uni_net(cell, inputs, init_state, timesteps, time_major=False, scope='uni_ne
 def bi_net(cell_f, cell_b, inputs, batch_size, timesteps, 
            scope= 'bi_net',
            project_outputs=False,
-           num_layers=1):
+           num_layers=1, hidden_dim = 1):
 
     # forward
     _, states_f = uni_net(cell_f, 
@@ -81,19 +80,20 @@ def bi_net(cell_f, cell_b, inputs, batch_size, timesteps,
     outputs = None
     # outputs
     if project_outputs:
+        #chain both forward and backword states together
         states = tf.concat([states_f, states_b], axis=-1)
         
         if len(states.shape) == 4 and num_layers:
-            states = tf.reshape(tf.transpose(states, [-2, 0, 1, -1]), [-1, hdim*2*num_layers])
-            Wo = tf.get_variable(scope+'/Wo', dtype=tf.float32, shape=[num_layers*2*hdim, hdim])
+            states = tf.reshape(tf.transpose(states, [-2, 0, 1, -1]), [-1, hidden_dim*2*num_layers])
+            Wo = tf.get_variable(scope+'/Wo', dtype=tf.float32, shape=[num_layers*2*hidden_dim, hidden_dim])
         elif len(states.shape) == 3:
-            states = tf.reshape(tf.transpose(states, [-2, 0, -1]), [-1, hdim*2])
-            Wo = tf.get_variable(scope+'/Wo', dtype=tf.float32, shape=[2*hdim, hdim])
+            states = tf.reshape(tf.transpose(states, [-2, 0, -1]), [-1, hidden_dim*2])
+            Wo = tf.get_variable(scope+'/Wo', dtype=tf.float32, shape=[2*hidden_dim, hidden_dim])
         else:
             print('>> ERR : Unable to handle state reshape')
             return None
         
-        outputs = tf.reshape(tf.matmul(states, Wo), [batch_size, timesteps, hdim])
+        outputs = tf.reshape(tf.matmul(states, Wo), [batch_size, timesteps, hidden_dim])
 
     return (states_f, states_b), outputs
 
@@ -282,3 +282,4 @@ def attention_pooling(states_a, states_b_i, state_c, params, d, timesteps):
     scores = tf.nn.softmax(tf.reshape(tf.matmul(tf.reshape(a, [-1, d]), Va), [-1, timesteps]))
     # c_i -> weighted sum of encoder states
     return tf.reduce_sum(states_a*tf.expand_dims(scores, axis=-1), axis=1) # [B, d]
+
