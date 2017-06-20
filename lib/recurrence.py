@@ -61,7 +61,7 @@ def uni_net(cell, inputs, init_state, timesteps, time_major=False, scope='uni_ne
 '''
 def bi_net(cell_f, cell_b, inputs, batch_size, timesteps, 
            scope= 'bi_net_0',
-           project_outputs=False)
+           project_outputs=False):
 
     # forward
     _, states_f = uni_net(cell_f, 
