@@ -1,6 +1,6 @@
 import zipfile
 from squad_preprocess import *
-
+import os
 
 if __name__ == '__main__':
     glove_base_url = "http://nlp.stanford.edu/data/"
